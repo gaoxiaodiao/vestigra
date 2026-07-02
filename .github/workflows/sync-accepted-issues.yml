@@ -1,0 +1,50 @@
+name: Sync Accepted Issues To Blackbox
+
+on:
+  issues:
+    types:
+      - labeled
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: "Public Vestigra issue number to sync manually"
+        required: true
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  sync-accepted-issue:
+    name: Create private tracking issue
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'accepted'
+    steps:
+      - name: Check sync token
+        id: token
+        env:
+          SYNC_TOKEN: ${{ secrets.VESTIGRA_ISSUE_SYNC_TOKEN }}
+        run: |
+          if [ -n "${SYNC_TOKEN:-}" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::VESTIGRA_ISSUE_SYNC_TOKEN is not configured; skipping private issue sync."
+          fi
+
+      - name: Check out repository
+        if: steps.token.outputs.available == 'true'
+        uses: actions/checkout@v4
+
+      - name: Sync accepted issue
+        if: steps.token.outputs.available == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.VESTIGRA_ISSUE_SYNC_TOKEN }}
+          EVENT_ISSUE_NUMBER: ${{ github.event.issue.number }}
+          INPUT_ISSUE_NUMBER: ${{ inputs.issue_number }}
+        run: |
+          issue_number="${INPUT_ISSUE_NUMBER:-$EVENT_ISSUE_NUMBER}"
+          python3 scripts/github_issue_sync.py accept-public \
+            --public-repo gaoxiaodiao/vestigra \
+            --private-repo gaoxiaodiao/blackbox \
+            --issue-number "$issue_number"
